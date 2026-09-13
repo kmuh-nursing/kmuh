@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>高雄市立聯合醫院 - 病人用藥安全稽核與數據統整系統</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SheetJS for Excel export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- FontAwesome icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
+        body {
+            font-family: 'Noto Sans TC', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #f8fafc;
+        }
+
+        /* 斜線不適用單元格背景 (用於後台紙本統計表) */
+        .na-cell-slash {
+            background: linear-gradient(to top right, transparent calc(50% - 1px), #000000 50%, transparent calc(50% + 1px)) !important;
+            background-color: #f1f5f9 !important;
+        }
+
+        /* 直書文字樣式 */
+        .writing-vertical {
+            writing-mode: vertical-rl;
+            text-orientation: upright;
+            letter-spacing: 0.3em;
+        }
+
+        /* 列印專用樣式 (A4 報表精密對齊) */
+        @media print {
+            .no-print {
+                display: none !important;
+            }
+            body {
+                background-color: #ffffff !important;
+                color: #000000 !important;
+                padding: 0 !important;
+                margin: 0 !important;
+            }
+            main {
+                max-width: 100% !important;
+                padding: 0 !important;
+                margin: 0 !important;
+            }
+            .print-container {
+                border: none !important;
+                box-shadow: none !important;
+                padding: 0 !important;
+                width: 100% !important;
+            }
+            table {
+                font-size: 11px !important;
+                border-color: #000000 !important;
+            }
+            th, td {
+                border-color: #000000 !important;
+                padding: 3px 2px !important;
+            }
+            @page {
+                size: A4 portrait;
+                margin: 1cm;
+            }
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
+
+    <!-- 頂部導覽列 (完全對齊截圖樣式) -->
+    <header class="bg-sky-600 text-white shadow-md no-print sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex flex-col sm:flex-row justify-between items-center gap-3">
+            <div class="flex items-center gap-3">
+                <div class="bg-white/10 p-2 rounded-xl backdrop-blur">
+                    <i class="fa-solid fa-hospital text-2xl text-white"></i>
+                </div>
+                <div>
+                    <h1 class="text-base sm:text-lg font-bold tracking-wide">高雄市立聯合醫院</h1>
+                    <p class="text-xs text-sky-100">病人用藥安全稽核與數據統整系統 (權限控管版)</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-3">
+                <span class="hidden md:flex items-center gap-1.5 bg-sky-700/80 px-3 py-1.5 rounded-full text-xs text-sky-100">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> 雲端連線中
+                </span>
+                <nav class="flex gap-2">
+                    <button id="nav-form" onclick="switchTab('form')" class="bg-white text-sky-800 font-bold px-4 py-1.5 rounded-md shadow transition flex items-center gap-1.5 cursor-pointer text-xs sm:text-sm">
+                        <i class="fa-solid fa-clipboard-check"></i> 填寫稽核表
+                    </button>
+                    <button id="nav-admin" onclick="switchTab('admin')" class="bg-sky-700 hover:bg-sky-800 text-white font-medium px-4 py-1.5 rounded-md shadow transition flex items-center gap-1.5 cursor-pointer text-xs sm:text-sm">
+                        <i class="fa-solid fa-chart-bar"></i> 後台數據統整 🔒
+                    </button>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-6xl mx-auto px-4 py-6 flex-grow w-full">
+
+        <!-- ================= 1. 填寫稽核表單頁面 (現代化卡片式模式) ================= -->
+        <div id="section-form" class="space-y-6">
+            <div class="bg-white p-6 md:p-8 rounded-xl shadow-sm border border-slate-200">
+                
+                <!-- 表頭與說明標語 -->
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-5 mb-6">
+                    <div>
+                        <h2 class="text-xl md:text-2xl font-bold text-slate-900 tracking-wide">病人用藥安全查核表</h2>
+                        <p class="text-xs md:text-sm text-slate-500 mt-1">請依照病房實際稽核情況逐項評估，填寫被稽核對象與相關人員後點選送出。</p>
+                    </div>
+                    <div class="bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold px-3 py-1.5 rounded-full flex items-center gap-1.5 whitespace-nowrap self-start sm:self-auto">
+                        <i class="fa-solid fa-shield-halved text-emerald-600"></i> 全院即時上傳同步
+                    </div>
+                </div>
+
+                <!-- 填寫基本資料區塊 (卡片背景) -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 bg-slate-50 p-5 rounded-xl border border-slate-200">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1.5">受查單位 <span class="text-red-500">*</span></label>
+                        <select id="audit-unit" onchange="onUnitChange()" class="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 text-slate-800">
+                            <option value="">請選擇單位</option>
+                            <option value="ICU" selected>ICU</option>
+                            <option value="HDR">HDR</option>
+                            <option value="手術室">手術室</option>
+                            <option value="注射室">注射室</option>
+                            <option value="ER">ER</option>
+                            <option value="72">72</option>
+                            <option value="放射科">放射科</option>
+                            <option value="BR">BR</option>
+                            <option value="門診">門診</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1.5">被稽核者姓名 / 床號 <span class="text-red-500">*</span></label>
+                        <input type="text" id="audit-target" placeholder="例: 9101床 王OO" class="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 text-slate-800">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1.5">稽核人員姓名 <span class="text-red-500">*</span></label>
+                        <input type="text" id="audit-staff" placeholder="請輸入姓名" class="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 text-slate-800">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1.5">查核日期 <span class="text-red-500">*</span></label>
+                        <input type="date" id="audit-date" class="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 text-slate-800">
+                    </div>
+                </div>
+
+                <!-- 卡片式稽核題目動態容器 -->
+                <div id="questions-cards-container" class="space-y-4">
+                    <!-- 動態渲染題目卡片 -->
+                </div>
+
+                <!-- 送出與重設按鈕 -->
+                <div class="mt-8 flex justify-end gap-3 border-t border-slate-100 pt-5">
+                    <button onclick="resetForm()" class="px-5 py-2.5 rounded-lg border border-slate-300 text-slate-600 text-sm font-medium hover:bg-slate-100 transition cursor-pointer">
+                        重設
+                    </button>
+                    <button onclick="submitAuditForm()" class="bg-sky-600 hover:bg-sky-700 text-white font-medium px-8 py-2.5 rounded-lg shadow transition text-sm cursor-pointer flex items-center gap-1.5">
+                        <i class="fa-solid fa-paper-plane"></i> 送出稽核單
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ================= 2. 後台稽核統計總表 (品質稽核標準版) ================= -->
+        <div id="section-admin" class="hidden space-y-6">
+            
+            <!-- 密碼驗證區塊 -->
+            <div id="admin-login-box" class="max-w-md mx-auto bg-white p-8 rounded-xl shadow-sm border border-slate-200 text-center mt-12 no-print">
+                <div class="w-12 h-12 bg-sky-100 text-sky-600 rounded-full flex items-center justify-center mx-auto mb-4 text-xl">🔒</div>
+                <h3 class="text-lg font-bold text-slate-900 mb-2">統計報表權限驗證</h3>
+                <p class="text-xs text-slate-500 mb-6">請輸入管理者密碼以檢視並導出品質稽核統計表。</p>
+                <input type="password" id="admin-pwd-input" placeholder="請輸入密碼" onkeyup="if(event.key==='Enter') verifyAdminPassword()" class="w-full bg-slate-50 border border-slate-300 rounded-md px-3 py-2 text-sm mb-4 text-center focus:outline-none focus:ring-2 focus:ring-sky-500">
+                <button onclick="verifyAdminPassword()" class="w-full bg-sky-600 hover:bg-sky-700 text-white font-medium py-2 rounded-md shadow transition text-sm cursor-pointer">
+                    登入後台
+                </button>
+            </div>
+
+            <!-- 後台內容區塊 -->
+            <div id="admin-content-box" class="hidden space-y-6">
+
+                <!-- 工具列 (列印時隱藏) -->
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex justify-between items-center flex-wrap gap-4 no-print">
+                    <div class="flex items-center gap-3">
+                        <label class="text-xs font-bold text-slate-700">統計月份篩選：</label>
+                        <input type="month" id="filter-month" onchange="renderStatsTable()" class="bg-slate-50 border border-slate-300 rounded px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-sky-500">
+                        <button onclick="loadSampleData()" class="text-xs bg-sky-50 hover:bg-sky-100 text-sky-700 px-3 py-1.5 rounded transition border border-sky-200 font-medium cursor-pointer">
+                            🎲 載入紙本範例數據 (N=60)
+                        </button>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="window.print()" class="bg-slate-800 hover:bg-slate-900 text-white text-xs font-medium px-4 py-2 rounded-md shadow transition flex items-center gap-1.5 cursor-pointer">
+                            🖨️ 列印 A4 稽核統計表
+                        </button>
+                        <button onclick="exportToExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium px-4 py-2 rounded-md shadow transition flex items-center gap-1.5 cursor-pointer">
+                            📥 匯出 Excel
+                        </button>
+                        <button onclick="lockAdmin()" class="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-medium px-3 py-2 rounded-md transition cursor-pointer">
+                            🔒 鎖定
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 報表實體 -->
+                <div class="bg-white p-8 rounded-xl shadow-sm border border-slate-200 print-container">
+                    
+                    <!-- 報表標頭 -->
+                    <div class="text-center mb-4">
+                        <h2 class="text-xl font-extrabold text-black tracking-wide">高雄市立聯合醫院護理科</h2>
+                        <p class="text-xs font-medium text-black tracking-tight mt-0.5">(高雄榮民總醫院營運管理)</p>
+                        <h3 class="text-lg font-bold text-black tracking-wider mt-2">病 人 用 藥 安 全 查 核 統 計 表</h3>
+                        
+                        <div class="flex justify-between items-center mt-4 px-2 text-xs font-bold text-black">
+                            <span id="report-month-str">115年07月</span>
+                            <span>閾值＝98%</span>
+                            <span id="report-total-n" class="border border-black rounded-full px-3 py-0.5 font-bold">N=60</span>
+                        </div>
+                    </div>
+
+                    <!-- 統計表格 -->
+                    <div class="overflow-x-auto">
+                        <table class="w-full border-collapse border border-black text-xs text-black">
+                            <thead>
+                                <tr class="bg-slate-50 text-center font-bold">
+                                    <th class="border border-black p-2 w-5/12" rowspan="2">項目</th>
+                                    <th class="border border-black p-1" colspan="7">未做到次數 <br><span class="text-[10px] font-normal">單位</span></th>
+                                    <th class="border border-black p-1 w-20" rowspan="2">做到達成率(科)</th>
+                                    <th class="border border-black p-1 w-16" rowspan="2">未完成率</th>
+                                </tr>
+                                <tr id="stats-table-unit-header" class="bg-slate-50 text-center font-bold">
+                                    <!-- 動態填入單位標頭與樣本數 n= -->
+                                </tr>
+                            </thead>
+                            <tbody id="stats-table-body" class="text-center">
+                                <!-- 動態載入紙本表格內容 -->
+                            </tbody>
+                            <tfoot>
+                                <tr id="stats-table-footer" class="font-bold bg-slate-50 border-t-2 border-black text-center">
+                                    <!-- 動態載入月平均達成率列 -->
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+
+                    <!-- 簽核區塊 -->
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-12 pt-4 text-xs font-bold text-black text-left items-end">
+                        <div class="flex items-center">
+                            <span class="whitespace-nowrap">製作者：</span>
+                            <input type="text" id="signer-maker" value="" placeholder="請輸入姓名" class="border-b border-black bg-transparent px-1 py-0.5 w-24 focus:outline-none focus:bg-amber-50 text-xs">
+                        </div>
+                        <div class="flex items-center">
+                            <span class="whitespace-nowrap">組長：</span>
+                            <input type="text" id="signer-leader" value="" placeholder="請輸入姓名" class="border-b border-black bg-transparent px-1 py-0.5 w-28 focus:outline-none focus:bg-amber-50 text-xs">
+                        </div>
+                        <div class="flex items-center">
+                            <span class="whitespace-nowrap">品質組組長：</span>
+                            <input type="text" id="signer-qa" value="" placeholder="請輸入姓名" class="border-b border-black bg-transparent px-1 py-0.5 w-28 focus:outline-none focus:bg-amber-50 text-xs">
+                        </div>
+                        <div class="flex items-center">
+                            <span class="whitespace-nowrap">護理科主任：</span>
+                            <input type="text" id="signer-director" value="" placeholder="請簽章" class="border-b border-black bg-transparent px-1 py-0.5 w-24 focus:outline-none focus:bg-amber-50 text-xs">
+                        </div>
+                    </div>
+
+                    <!-- 簽核日期 (可自由輸入與修改) -->
+                    <div class="text-right text-xs font-bold text-black mt-4 pr-6 flex justify-end items-center gap-1">
+                        <span>日期：</span>
+                        <input type="text" id="signer-date" value="" placeholder="民國/月/日" class="border-b border-black bg-transparent px-2 py-0.5 w-36 text-center focus:outline-none focus:bg-amber-50 focus:border-sky-600 transition font-bold text-xs" title="點擊即可修改簽核日期">
+                    </div>
+                </div>
+
+                <!-- 歷史明細紀錄 (列印時隱藏) -->
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 no-print">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="font-bold text-sm text-slate-900">當月用藥安全原始稽核明細</h3>
+                        <button onclick="clearAllData()" class="text-xs text-red-600 hover:text-red-800 underline cursor-pointer">清空所有數據</button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-xs">
+                            <thead>
+                                <tr class="bg-slate-100 text-slate-700 border-b border-slate-200">
+                                    <th class="p-2">日期</th>
+                                    <th class="p-2">單位</th>
+                                    <th class="p-2">被稽核對象</th>
+                                    <th class="p-2">稽核人員</th>
+                                    <th class="p-2">未做到項目數</th>
+                                    <th class="p-2">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="records-table-body" class="divide-y divide-slate-200">
+                                <!-- 動態明細清單 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        // 10 項標準用藥安全題目
+        const questions = [
+            { id: 1, text: "1. 衛材、藥品打開後註明開封到期日(含急救車、冰箱、工作車)且未過期及妥善保管" },
+            { id: 2, text: "2. 藥用冰箱溫度需於2-8℃範圍內，每天2次點班並有記錄" },
+            { id: 3, text: "3. 藥用冰箱無放置檢體、食物及其他物品" },
+            { id: 4, text: "4. 藥用冰箱故障，應先將藥品移出，借放其他單位或藥局，確保藥物有效性" },
+            { id: 5, text: "5. 給藥前完成病人相關評估及病人辨識(配戴手圈或其他辨識證明)" },
+            { id: 6, text: "6. 給藥時應核對醫囑、姓名、藥物名稱、時間、劑量、途徑、給藥後完成線上簽章，未給藥須註明原因" },
+            { id: 7, text: "7. 病人使用靜脈輸液幫浦時，需填寫「病人靜脈輸液幫浦使用監測單」，並有兩位護理師共同確認核對簽名" },
+            { id: 8, text: "8. 高警訊藥物或麻醉鎮靜藥物放置處有標示，急救車藥品依規定標示及上鎖" },
+            { id: 9, text: "9. 觀察病人用藥反應，如有異常立即通知醫師處理，並記錄病人狀況、相關處理及評估結果等" },
+            { id: 10, text: "10. 若有給藥錯誤情況，應立即處理再通報藥物異常事件，並列入交班追蹤" }
+        ];
+
+        // 預設 7 個標準紙本欄位單位 (用於統計總表)
+        const paperUnits = ["ICU", "HDR", "手術室", "注射室", "ER", "72", "放射科"];
+
+        // 不適用規則定義
+        function getNotApplicableUnitsText(qId) {
+            switch(qId) {
+                case 2:
+                case 3:
+                case 4:
+                    return "放射科";
+                case 7:
+                    return "放射科, 手術室, 門診, BR, HDR";
+                case 8:
+                    return "門診";
+                default:
+                    return "";
+            }
+        }
+
+        function isUnitNotApplicable(unit, qId) {
+            if (unit === "放射科" && [2, 3, 4, 7, 8].includes(qId)) return true;
+            if (unit === "手術室" && qId === 7) return true;
+            if (["門診", "BR", "HDR"].includes(unit) && qId === 7) return true;
+            if (unit === "門診" && qId === 8) return true;
+            return false;
+        }
+
+        // 頁籤切換
+        let isAdminLoggedIn = false;
+
+        function switchTab(tab) {
+            const sectionForm = document.getElementById('section-form');
+            const sectionAdmin = document.getElementById('section-admin');
+            const navForm = document.getElementById('nav-form');
+            const navAdmin = document.getElementById('nav-admin');
+
+            if (tab === 'form') {
+                sectionForm.classList.remove('hidden');
+                sectionAdmin.classList.add('hidden');
+                navForm.className = "bg-white text-sky-800 font-bold px-4 py-1.5 rounded-md shadow transition flex items-center gap-1.5 cursor-pointer text-xs sm:text-sm";
+                navAdmin.className = "bg-sky-700 hover:bg-sky-800 text-white font-medium px-4 py-1.5 rounded-md shadow transition flex items-center gap-1.5 cursor-pointer text-xs sm:text-sm";
+            } else if (tab === 'admin') {
+                sectionForm.classList.add('hidden');
+                sectionAdmin.classList.remove('hidden');
+                navAdmin.className = "bg-white text-sky-800 font-bold px-4 py-1.5 rounded-md shadow transition flex items-center gap-1.5 cursor-pointer text-xs sm:text-sm";
+                navForm.className = "bg-sky-700 hover:bg-sky-800 text-white font-medium px-4 py-1.5 rounded-md shadow transition flex items-center gap-1.5 cursor-pointer text-xs sm:text-sm";
+                
+                if (isAdminLoggedIn) {
+                    renderStatsTable();
+                }
+            }
+        }
+
+        function verifyAdminPassword() {
+            const pwdInput = document.getElementById('admin-pwd-input');
+            if (pwdInput.value === 'kmuh2026') {
+                isAdminLoggedIn = true;
+                document.getElementById('admin-login-box').classList.add('hidden');
+                document.getElementById('admin-content-box').classList.remove('hidden');
+                pwdInput.value = '';
+                renderStatsTable();
+            } else {
+                alert('密碼錯誤，請重新輸入！');
+            }
+        }
+
+        function lockAdmin() {
+            isAdminLoggedIn = false;
+            document.getElementById('admin-pwd-input').value = '';
+            document.getElementById('admin-login-box').classList.remove('hidden');
+            document.getElementById('admin-content-box').classList.add('hidden');
+        }
+
+        // 初始化日期
+        document.getElementById('audit-date').valueAsDate = new Date();
+        const today = new Date();
+        const yyyy = today.getFullYear();
+        const mm = String(today.getMonth() + 1).padStart(2, '0');
+        document.getElementById('filter-month').value = `${yyyy}-${mm}`;
+
+        // 渲染卡片式稽核題目 (完全對齊截圖介面)
+        function renderFormQuestions() {
+            const container = document.getElementById('questions-cards-container');
+            const currentUnit = document.getElementById('audit-unit').value;
+            let html = '';
+
+            questions.forEach((q) => {
+                const naText = getNotApplicableUnitsText(q.id);
+                const isNA = isUnitNotApplicable(currentUnit, q.id);
+
+                html += `
+                    <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-3 hover:border-sky-200 transition">
+                        <div class="font-bold text-slate-900 text-sm md:text-base leading-relaxed flex flex-col gap-2">
+                            <div>${q.text}</div>
+                            ${naText ? `<div class="inline-flex items-center gap-1 bg-sky-50 text-sky-700 text-xs font-medium px-2.5 py-1 rounded-md w-fit">
+                                <i class="fa-solid fa-circle-info text-sky-500"></i> 不適用單位：${naText}
+                            </div>` : ''}
+                        </div>
+                        
+                        <div class="flex items-center gap-6 pt-1 text-sm">
+                            <label class="flex items-center gap-2 cursor-pointer select-none">
+                                <input type="radio" name="q_${q.id}" value="done" ${!isNA ? 'checked' : ''} class="w-4 h-4 text-sky-600 focus:ring-sky-500 cursor-pointer">
+                                <span class="font-medium text-slate-800">做到</span>
+                            </label>
+                            <label class="flex items-center gap-2 cursor-pointer select-none">
+                                <input type="radio" name="q_${q.id}" value="undone" class="w-4 h-4 text-red-600 focus:ring-red-500 cursor-pointer">
+                                <span class="font-medium text-red-600">未做到</span>
+                            </label>
+                            <label class="flex items-center gap-2 cursor-pointer select-none">
+                                <input type="radio" name="q_${q.id}" value="na" ${isNA ? 'checked' : ''} class="w-4 h-4 text-amber-600 focus:ring-amber-500 cursor-pointer">
+                                <span class="font-medium text-amber-600">不適用</span>
+                            </label>
+                        </div>
+
+                        <div>
+                            <input type="text" id="remark_${q.id}" placeholder="備註說明 (選填)..." class="w-full bg-slate-50/80 border border-slate-200 rounded-lg px-3.5 py-2 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition">
+                        </div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        function onUnitChange() {
+            renderFormQuestions();
+        }
+
+        // 送出稽核單
+        function submitAuditForm() {
+            const unit = document.getElementById('audit-unit').value;
+            const target = document.getElementById('audit-target').value.trim();
+            const date = document.getElementById('audit-date').value;
+            const staff = document.getElementById('audit-staff').value.trim();
+
+            if (!unit) {
+                alert('請選擇受查單位！');
+                return;
+            }
+            if (!target || !staff) {
+                alert('請確實填寫「被稽核者姓名 / 床號」與「稽核人員姓名」！');
+                return;
+            }
+
+            let results = [];
+            questions.forEach(q => {
+                const radios = document.getElementsByName(`q_${q.id}`);
+                let val = 'done';
+                for (let r of radios) {
+                    if (r.checked) val = r.value;
+                }
+                const remark = document.getElementById(`remark_${q.id}`) ? document.getElementById(`remark_${q.id}`).value.trim() : '';
+                results.push({ id: q.id, status: val, remark });
+            });
+
+            const record = {
+                id: Date.now(),
+                unit,
+                target,
+                date,
+                staff,
+                results
+            };
+
+            let allRecords = JSON.parse(localStorage.getItem('kmuh_med_records_v3') || '[]');
+            allRecords.push(record);
+            localStorage.setItem('kmuh_med_records_v3', JSON.stringify(allRecords));
+
+            alert('用藥安全稽核單已成功送出！');
+            resetForm();
+        }
+
+        function resetForm() {
+            document.getElementById('audit-target').value = '';
+            document.getElementById('audit-staff').value = '';
+            document.getElementById('audit-date').valueAsDate = new Date();
+            renderFormQuestions();
+        }
+
+        // 西元轉民國年月格式
+        function formatRocMonth(yearMonthStr) {
+            if (!yearMonthStr) return '';
+            const parts = yearMonthStr.split('-');
+            const year = parseInt(parts[0], 10) - 1911;
+            const month = String(parts[1]).padStart(2, '0');
+            return `${year}年${month}月`;
+        }
+
+        // 渲染報表與統計總表
+        function renderStatsTable() {
+            const filterMonth = document.getElementById('filter-month').value;
+            document.getElementById('report-month-str').innerText = formatRocMonth(filterMonth);
+
+            const allRecords = JSON.parse(localStorage.getItem('kmuh_med_records_v3') || '[]');
+            const monthRecords = allRecords.filter(r => r.date && r.date.startsWith(filterMonth));
+
+            let unitSampleCounts = Array(paperUnits.length).fill(0);
+            let matrix = Array(10).fill(0).map(() => Array(paperUnits.length).fill(0));
+
+            monthRecords.forEach(rec => {
+                let uIdx = paperUnits.indexOf(rec.unit);
+                if (uIdx === -1) return;
+
+                unitSampleCounts[uIdx]++;
+
+                rec.results.forEach(res => {
+                    let qIdx = res.id - 1;
+                    if (res.status === 'undone') {
+                        matrix[qIdx][uIdx]++;
+                    }
+                });
+            });
+
+            const totalN = unitSampleCounts.reduce((a, b) => a + b, 0);
+            document.getElementById('report-total-n').innerText = `N=${totalN}`;
+
+            const unitHeaderTr = document.getElementById('stats-table-unit-header');
+            let unitHeaderHtml = '';
+            paperUnits.forEach((u, uIdx) => {
+                let count = unitSampleCounts[uIdx];
+                unitHeaderHtml += `<th class="border border-black p-1 w-12">${u}<br><span class="font-normal text-[10px]">n=${count}</span></th>`;
+            });
+            unitHeaderTr.innerHTML = unitHeaderHtml;
+
+            let tbody = document.getElementById('stats-table-body');
+            let html = '';
+
+            let grandTotalValidAssessments = 0;
+            let grandTotalUndone = 0;
+
+            questions.forEach((q, qIdx) => {
+                html += `<tr class="hover:bg-slate-50">`;
+                html += `<td class="border border-black p-1.5 text-left font-medium leading-tight text-xs">${q.text}</td>`;
+
+                let rowUndoneTotal = 0;
+                let rowValidAssessments = 0;
+
+                paperUnits.forEach((u, uIdx) => {
+                    let isNA = isUnitNotApplicable(u, q.id);
+                    let undoneCount = matrix[qIdx][uIdx];
+
+                    if (isNA) {
+                        html += `<td class="border border-black p-1 na-cell-slash"></td>`;
+                    } else {
+                        html += `<td class="border border-black p-1 font-semibold">${undoneCount}</td>`;
+                        rowUndoneTotal += undoneCount;
+                        rowValidAssessments += unitSampleCounts[uIdx];
+                    }
+                });
+
+                let doneRateStr = "—";
+                let undoneRateStr = "—";
+
+                if (rowValidAssessments > 0) {
+                    let doneRate = ((rowValidAssessments - rowUndoneTotal) / rowValidAssessments) * 100;
+                    let undoneRate = (rowUndoneTotal / rowValidAssessments) * 100;
+                    doneRateStr = doneRate.toFixed(2) + "%";
+                    undoneRateStr = undoneRate.toFixed(2) + "%";
+                }
+
+                grandTotalValidAssessments += rowValidAssessments;
+                grandTotalUndone += rowUndoneTotal;
+
+                html += `<td class="border border-black p-1 font-bold text-slate-900">${doneRateStr}</td>`;
+                html += `<td class="border border-black p-1 text-slate-700">${undoneRateStr}</td>`;
+                html += `</tr>`;
+            });
+
+            tbody.innerHTML = html;
+
+            let tfoot = document.getElementById('stats-table-footer');
+            let footHtml = `<td class="border border-black p-2 text-center font-bold">做到月平均達成率(單位)</td>`;
+
+            paperUnits.forEach((u, uIdx) => {
+                let samples = unitSampleCounts[uIdx];
+                let unitValidAssessments = 0;
+                let unitUndoneSum = 0;
+
+                for (let qIdx = 0; qIdx < 10; qIdx++) {
+                    if (!isUnitNotApplicable(u, qIdx + 1)) {
+                        unitValidAssessments += samples;
+                        unitUndoneSum += matrix[qIdx][uIdx];
+                    }
+                }
+
+                let unitRateStr = "—";
+                if (unitValidAssessments > 0) {
+                    let rate = ((unitValidAssessments - unitUndoneSum) / unitValidAssessments) * 100;
+                    unitRateStr = rate.toFixed(2) + "%";
+                }
+
+                footHtml += `<td class="border border-black p-1 font-extrabold text-slate-900">${unitRateStr}</td>`;
+            });
+
+            let grandDoneRateStr = "—";
+            let grandUndoneRateStr = "—";
+
+            if (grandTotalValidAssessments > 0) {
+                let grandRate = ((grandTotalValidAssessments - grandTotalUndone) / grandTotalValidAssessments) * 100;
+                let grandUndoneRate = (grandTotalUndone / grandTotalValidAssessments) * 100;
+                grandDoneRateStr = grandRate.toFixed(2) + "%";
+                grandUndoneRateStr = grandUndoneRate.toFixed(2) + "%";
+            }
+
+            footHtml += `<td class="border border-black p-1 font-extrabold text-slate-900">${grandDoneRateStr}</td>`;
+            footHtml += `<td class="border border-black p-1 text-red-700">${grandUndoneRateStr}</td>`;
+
+            tfoot.innerHTML = footHtml;
+
+            renderRecordsTable(monthRecords);
+        }
+
+        function renderRecordsTable(monthRecords) {
+            let recBody = document.getElementById('records-table-body');
+            if (monthRecords.length === 0) {
+                recBody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-slate-400">當月尚無稽核紀錄，請填寫表單或點擊「載入紙本範例數據 (N=60)」。</td></tr>`;
+                return;
+            }
+
+            let html = '';
+            monthRecords.slice().reverse().forEach(r => {
+                let undoneCount = r.results.filter(x => x.status === 'undone').length;
+                html += `
+                    <tr class="hover:bg-slate-50 border-b border-slate-100 text-xs">
+                        <td class="p-2">${r.date}</td>
+                        <td class="p-2 font-bold">${r.unit}</td>
+                        <td class="p-2">${r.target}</td>
+                        <td class="p-2">${r.staff}</td>
+                        <td class="p-2 font-semibold ${undoneCount > 0 ? 'text-red-600' : 'text-sky-700'}">${undoneCount} 項</td>
+                        <td class="p-2">
+                            <button onclick="deleteRecord(${r.id})" class="text-red-500 hover:text-red-700 underline cursor-pointer">刪除</button>
+                        </td>
+                    </tr>
+                `;
+            });
+            recBody.innerHTML = html;
+        }
+
+        function deleteRecord(id) {
+            if (confirm('確定要刪除此筆稽核紀錄嗎？')) {
+                let allRecords = JSON.parse(localStorage.getItem('kmuh_med_records_v3') || '[]');
+                allRecords = allRecords.filter(r => r.id !== id);
+                localStorage.setItem('kmuh_med_records_v3', JSON.stringify(allRecords));
+                renderStatsTable();
+            }
+        }
+
+        function clearAllData() {
+            if (confirm('警告：確定要清空所有用藥安全稽核歷史紀錄嗎？')) {
+                localStorage.removeItem('kmuh_med_records_v3');
+                renderStatsTable();
+            }
+        }
+
+        // 載入範例數據 (N=60)
+        function loadSampleData() {
+            const filterMonth = document.getElementById('filter-month').value || '2026-07';
+            let mockRecords = [];
+
+            const sampleCounts = { "ICU": 5, "HDR": 5, "手術室": 5, "注射室": 4, "ER": 4, "72": 4, "放射科": 4, "BR": 15, "門診": 14 };
+            let recordId = Date.now();
+
+            for (let u in sampleCounts) {
+                let count = sampleCounts[u];
+                for (let i = 1; i <= count; i++) {
+                    let results = [];
+                    for (let q = 1; q <= 10; q++) {
+                        let isNA = isUnitNotApplicable(u, q);
+                        results.push({ id: q, status: isNA ? 'na' : 'done' });
+                    }
+
+                    mockRecords.push({
+                        id: recordId++,
+                        unit: u,
+                        target: `${u}-${100 + i}床 病人`,
+                        date: `${filterMonth}-05`,
+                        staff: "護理師",
+                        results
+                    });
+                }
+            }
+
+            let allRecords = JSON.parse(localStorage.getItem('kmuh_med_records_v3') || '[]');
+            allRecords = allRecords.filter(r => !r.date.startsWith(filterMonth));
+            allRecords = allRecords.concat(mockRecords);
+            localStorage.setItem('kmuh_med_records_v3', JSON.stringify(allRecords));
+
+            renderStatsTable();
+            alert(`已成功載入 ${formatRocMonth(filterMonth)} 總件數 N=60 之標準樣例數據！`);
+        }
+
+        // 匯出 Excel
+        function exportToExcel() {
+            const filterMonth = document.getElementById('filter-month').value;
+            const rocMonthStr = formatRocMonth(filterMonth);
+            
+            let wb = XLSX.utils.book_new();
+            let ws_data = [
+                ["高雄市立聯合醫院護理科"],
+                ["(高雄榮民總醫院營運管理)"],
+                ["病人用藥安全查核統計表"],
+                [rocMonthStr, "閾值＝98%", "N=" + document.getElementById('report-total-n').innerText.replace('N=', '')],
+                ["項目", "ICU", "HDR", "手術室", "注射室", "ER", "72", "放射科", "做到達成率(科)", "未完成率"]
+            ];
+
+            const tbody = document.getElementById('stats-table-body');
+            const rows = tbody.querySelectorAll('tr');
+
+            rows.forEach(r => {
+                let rowData = [];
+                r.querySelectorAll('td').forEach(td => {
+                    rowData.push(td.innerText.replace('\n', ''));
+                });
+                ws_data.push(rowData);
+            });
+
+            const tfootTd = document.getElementById('stats-table-footer').querySelectorAll('td');
+            let footerRow = [];
+            tfootTd.forEach(td => footerRow.push(td.innerText));
+            ws_data.push(footerRow);
+
+            ws_data.push([]);
+            ws_data.push([
+                `製作者：${document.getElementById('signer-maker').value}`,
+                `組長：${document.getElementById('signer-leader').value}`,
+                `品質組組長：${document.getElementById('signer-qa').value}`,
+                `護理科主任：${document.getElementById('signer-director').value}`
+            ]);
+            ws_data.push([`日期：${document.getElementById('signer-date').value}`]);
+
+            let ws = XLSX.utils.aoa_to_sheet(ws_data);
+            XLSX.utils.book_append_sheet(wb, ws, "用藥安全統計報表");
+            XLSX.writeFile(wb, `病人用藥安全查核統計表_${rocMonthStr}.xlsx`);
+        }
+
+        // 初始化渲染
+        renderFormQuestions();
+    </script>
+</body>
+</html>
